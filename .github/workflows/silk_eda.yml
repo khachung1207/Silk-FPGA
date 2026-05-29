@@ -40,10 +40,10 @@ jobs:
           # Vẫn in log ra console của GitHub để backup
           cat generic/eda_log.txt
           
-          # 4. Gom file kết quả và file log vào thư mục ẩn
+          # 4. Gom file kết quả, file log và file thống kê tài nguyên vào thư mục ẩn
           cd generic
           mkdir -p .results
-          mv *.svg *.md sim/*.vcd eda_log.txt .results/ 2>/dev/null || true
+          mv *.svg *.md sim/*.vcd eda_log.txt resource_stat.txt .results/ 2>/dev/null || true
           
           # 5. Ép GitHub báo Xanh (Pass) hay Đỏ (Fail) dựa vào đúng mã lỗi ở bước 3
           exit $EXIT_CODE
@@ -62,10 +62,10 @@ jobs:
           REPO_URL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}"
           cd generic
           
-          echo "# Báo Cáo Phân Tích " >> $GITHUB_STEP_SUMMARY
+          echo "# 📊 Báo Cáo Phân Tích SILK EDA" >> $GITHUB_STEP_SUMMARY
           
           # --- HIỂN THỊ TRỰC TIẾP LOG RA SUMMARY ---
-          echo "## Nhật ký thực thi (Logs)" >> $GITHUB_STEP_SUMMARY
+          echo "## 💻 Nhật ký thực thi (Logs)" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
           if [ -f ".results/eda_log.txt" ]; then
             cat .results/eda_log.txt >> $GITHUB_STEP_SUMMARY
@@ -97,5 +97,16 @@ jobs:
           else
              echo "*(Không phát hiện máy trạng thái - State Machine trong thiết kế này)*" >> $GITHUB_STEP_SUMMARY
           fi
+          
+          # --- HIỂN THỊ THỐNG KÊ TÀI NGUYÊN (Generic Cells) ---
+          echo "## 4. Tài Nguyên Thiết Kế (Generic Cells)" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          if [ -f ".results/resource_stat.txt" ]; then
+             cat .results/resource_stat.txt >> $GITHUB_STEP_SUMMARY
+          else
+             echo "Không tìm thấy dữ liệu thống kê tài nguyên." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # -----------------------------------------
           
           echo "> 💡 **Mẹo:** Tải file \`.vcd\` trong thư mục \`generic/.results\` để xem sóng mô phỏng." >> $GITHUB_STEP_SUMMARY
