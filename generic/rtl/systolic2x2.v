@@ -1,4 +1,4 @@
-module systolic2x2(
+module  systolic2x2(
     input clk,
     input rst_n,
     input  [3:0] a00,
