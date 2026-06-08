@@ -3,14 +3,14 @@ name: SILK EDA - General Check
 on:
   push:
     paths:
-      - 'generic/rtl/**'
-      - 'generic/tb/**'
-      - 'generic/config.txt'
+      - 'projects/**/rtl/**'
+      - 'projects/**/tb/**'
+      - 'projects/**/config.txt'
   pull_request:
     paths:
-      - 'generic/rtl/**'
-      - 'generic/tb/**'
-      - 'generic/config.txt'
+      - 'projects/**/rtl/**'
+      - 'projects/**/tb/**'
+      - 'projects/**/config.txt'
 
 jobs:
   run_eda_pipeline:
@@ -20,29 +20,47 @@ jobs:
     steps:
       - name: Tải mã nguồn
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Lấy đủ commit gần nhất để tính toán sai biệt (git diff)
 
       - name: Cập nhật môi trường SILK EDA
         run: docker pull huyatieo/silk-eda:latest
 
+      - name: Xác định dự án có thay đổi
+        id: locate_project
+        run: |
+          echo "=== ĐANG XÁC ĐỊNH VÙNG THAY ĐỔI ==="
+          # Tìm tệp bất kỳ trong thư mục projects vừa bị chỉnh sửa ở commit mới nhất
+          CHANGED_FILE=$(git diff --name-only HEAD~1 HEAD | grep "projects/" | head -n 1)
+          
+          if [ -z "$CHANGED_FILE" ]; then
+            echo "❌ Không phát hiện thay đổi hợp lệ trong thư mục projects/."
+            exit 1
+          fi
+          
+          # Trích xuất ra đường dẫn gốc của bài Lab (VD: projects/lab01_multiplier)
+          TARGET_DIR=$(echo "$CHANGED_FILE" | cut -d'/' -f1-2)
+          
+          # Lưu đường dẫn vào môi trường của GitHub Runner
+          echo "TARGET_PATH=$TARGET_DIR" >> $GITHUB_ENV
+          echo "✅ Xác định được dự án cần thực thi: $TARGET_DIR"
+
       - name: Khởi chạy SILK EDA
         run: |
-          echo "=== KÍCH HOẠT SILK EDA ==="
+          echo "=== KÍCH HOẠT SILK EDA CHO: ${{ env.TARGET_PATH }} ==="
           
           set +e 
           
-          docker run --rm -v "${{ github.workspace }}/generic:/workspace" huyatieo/silk-eda:latest > generic/eda_log.txt 2>&1
+          # Mount động thư mục bài Lab cụ thể vào Docker
+          docker run --rm -v "${{ github.workspace }}/${{ env.TARGET_PATH }}:/workspace" huyatieo/silk-eda:latest > ${{ env.TARGET_PATH }}/eda_log.txt 2>&1
           
           EXIT_CODE=$?
+          cat ${{ env.TARGET_PATH }}/eda_log.txt
           
-          cat generic/eda_log.txt
-          
-          # 4. DỌN RÁC VÀ GOM FILE KẾT QUẢ
-          cd generic
+          # Dọn dẹp và phân loại sản phẩm đầu ra của đúng bài Lab đó
+          cd ${{ env.TARGET_PATH }}
           mkdir -p .results
-          # Xóa sạch file bóng ma từ các lần chạy module cũ trước khi lưu file mới
           rm -f .results/*.svg .results/*.md .results/*.txt .results/*.vcd 2>/dev/null || true
-          
-          # Đẩy file mới vào
           mv *.svg *.md sim/*.vcd eda_log.txt resource_stat.txt .results/ 2>/dev/null || true
           
           exit $EXIT_CODE
@@ -51,20 +69,22 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         if: always()
         with:
-          commit_message: "Tự động tạo báo cáo EDA, sơ đồ và Log (thư mục generic)"
-          file_pattern: 'generic/.results/*'
+          commit_message: "Tự động tạo báo cáo EDA cho mục ${{ env.TARGET_PATH }}"
+          file_pattern: '${{ env.TARGET_PATH }}/.results/*'
 
       - name: Tạo Báo cáo Trực quan
         if: always()
         run: |
           REPO_URL="https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}"
-          cd generic
           
-          echo "# 📊 Báo Cáo Phân Tích SILK EDA" >> $GITHUB_STEP_SUMMARY
+          # Di chuyển vào đúng thư mục bài Lab có thay đổi để đọc config.txt sinh Summary
+          cd ${{ env.TARGET_PATH }}
+          
+          echo "# 📊 Báo Cáo Phân Tích SILK EDA - \`${{ env.TARGET_PATH }}\`" >> $GITHUB_STEP_SUMMARY
           
           echo "## 💻 Nhật ký thực thi (Logs)" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
-          if [ -s ".results/eda_log.txt" ]; then
+          if [ -f ".results/eda_log.txt" ]; then
             cat .results/eda_log.txt >> $GITHUB_STEP_SUMMARY
           else
             echo "Không thể tạo file log hoặc tiến trình bị ngắt đột ngột." >> $GITHUB_STEP_SUMMARY
@@ -79,12 +99,11 @@ jobs:
           
           echo "## 1. Sơ Đồ Module" >> $GITHUB_STEP_SUMMARY
           if [ -f ".results/module_${TOP_MODULE}.svg" ]; then
-             echo "![Sơ Đồ Module](${REPO_URL}/generic/.results/module_${TOP_MODULE}.svg)" >> $GITHUB_STEP_SUMMARY
+             echo "![Sơ Đồ Module](${REPO_URL}/${{ env.TARGET_PATH }}/.results/module_${TOP_MODULE}.svg)" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "## 2. Tài Nguyên Thiết Kế (Generic Cells)" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
-          # Dùng cờ -s để kiểm tra file có dữ liệu không (tránh file 0 byte)
           if [ -s ".results/resource_stat.txt" ]; then
              cat .results/resource_stat.txt >> $GITHUB_STEP_SUMMARY
           else
@@ -94,14 +113,14 @@ jobs:
 
           echo "## 3. RTL Schematic" >> $GITHUB_STEP_SUMMARY
           if [ -f ".results/schematic_${TOP_MODULE}.svg" ]; then
-             echo "![Sơ Đồ Nguyên Lý RTL](${REPO_URL}/generic/.results/schematic_${TOP_MODULE}.svg)" >> $GITHUB_STEP_SUMMARY
+             echo "![Sơ Đồ Nguyên Lý RTL](${REPO_URL}/${{ env.TARGET_PATH }}/.results/schematic_${TOP_MODULE}.svg)" >> $GITHUB_STEP_SUMMARY
           fi
 
           echo "## 4. Sơ Đồ Trạng Thái (FSM)" >> $GITHUB_STEP_SUMMARY
           if [ -f ".results/fsm_${TOP_MODULE}.svg" ]; then
-             echo "![Sơ Đồ FSM](${REPO_URL}/generic/.results/fsm_${TOP_MODULE}.svg)" >> $GITHUB_STEP_SUMMARY
+             echo "![Sơ Đồ FSM](${REPO_URL}/${{ env.TARGET_PATH }}/.results/fsm_${TOP_MODULE}.svg)" >> $GITHUB_STEP_SUMMARY
           else
              echo "*(Không phát hiện máy trạng thái - State Machine trong thiết kế này)*" >> $GITHUB_STEP_SUMMARY
           fi
           
-          echo "> 💡 **Mẹo:** Tải file \`.vcd\` trong thư mục \`generic/.results\` để xem sóng mô phỏng." >> $GITHUB_STEP_SUMMARY
+          echo "> 💡 **Mẹo:** Tải file \`.vcd\` trong thư mục \`${{ env.TARGET_PATH }}/.results\` để xem sóng mô phỏng." >> $GITHUB_STEP_SUMMARY
