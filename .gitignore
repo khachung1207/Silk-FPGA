@@ -22,5 +22,6 @@ xsim.dir/
 # Simulation tools (ModelSim/Questa/Verilator)
 *.wlf
 *.vcd
+!**/sim/*.vcd
 work/
 transcript
