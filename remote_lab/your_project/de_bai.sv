@@ -333,7 +333,7 @@ module dino_ctrl #(
     begin
       if (new_round)
       begin
-        y_pos     <= GROUND_TOP + JUMP_V0;
+        y_pos     <= GROUND_TOP + vy;
         vy        <= JUMP_V0 + GRAVITY;
         on_ground <= 1'b1;
       end
